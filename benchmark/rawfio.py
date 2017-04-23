@@ -1,10 +1,8 @@
-import subprocess
 import common
 import settings
 import monitoring
 import os
 import time
-import string
 import logging
 
 from benchmark import Benchmark
@@ -15,17 +13,21 @@ class RawFio(Benchmark):
 
     def __init__(self, cluster, config):
         super(RawFio, self).__init__(cluster, config)
+        logger.debug(config)
         # comma-separated list of block devices to use inside the client host/VM/container
+        self.config = config
+        self.iteration = config.get('iteration')
         self.block_device_list = config.get('block_devices', '/dev/vdb' )
         self.block_devices = [ d.strip() for d in self.block_device_list.split(',') ]
         self.concurrent_procs = config.get('concurrent_procs', len(self.block_devices))
         self.total_procs = self.concurrent_procs * len(settings.getnodes('clients').split(','))
-        self.fio_out_format = "json"
-        self.time =  str(config.get('time', '300'))
+        self.fio_out_format = config.get("fio_output", "json")
+        self.time = str(config.get('time', '300'))
         self.ramp = str(config.get('ramp', '0'))
         self.startdelay = config.get('startdelay', None)
         self.rate_iops = config.get('rate_iops', None)
         self.iodepth = config.get('iodepth', 16)
+        self.client_ra = config.get('client_ra', 128)
         self.direct = config.get('direct', 1)
         self.numjobs = config.get('numjobs', 1)
         self.mode = config.get('mode', 'write')
@@ -35,15 +37,15 @@ class RawFio(Benchmark):
         self.op_size = config.get('op_size', 4194304)
         self.vol_size = config.get('vol_size', 65536) * 0.9
         self.fio_cmd = config.get('fio_cmd', 'sudo /usr/bin/fio')
-        # FIXME there are too many permutations, need to put results in SQLITE3 
-        self.run_dir = '%s/raw_ra-%08d/op_size-%08d/concurrent_procs-%03d/iodepth-%03d/%s' % (self.run_dir, int(self.osd_ra), int(self.op_size), int(self.total_procs), int(self.iodepth), self.mode)
-        self.out_dir = '%s/raw_ra-%08d/op_size-%08d/concurrent_procs-%03d/iodepth-%03d/%s' % (self.archive_dir, int(self.osd_ra), int(self.op_size), int(self.total_procs), int(self.iodepth), self.mode)
+        self.out_dir = '%s/%s' % (self.archive_dir, self.uuid)
+        self.run_dir = "%s/%s/%s" % (settings.cluster.get('tmp_dir'), self.getclass(), self.uuid)
 
     # def exists(self):
     #     if os.path.exists(self.out_dir):
     #         logger.info('Skipping existing test in %s.', self.out_dir)
     #         return True
     #     return False
+
 
     def initialize(self): 
         super(RawFio, self).initialize()
@@ -70,12 +72,17 @@ class RawFio(Benchmark):
         # Create the run directory
         common.pdsh(clnts, 'rm -rf %s' % self.run_dir,
                     continue_if_error=False).communicate()
+        logger.debug("Create Run Dir: %s" % self.run_dir)
         common.make_remote_dir(self.run_dir)
 
     def run(self):
         super(RawFio, self).run()
         # Set client readahead
+        self.set_client_param('read_ahead_kb', self.client_ra)
+
         clnts = settings.getnodes('clients')
+
+        common.make_remote_dir(self.run_dir)
 
         # We'll always drop caches for rados bench
         self.dropcaches()
@@ -90,7 +97,12 @@ class RawFio(Benchmark):
         for i in range(self.concurrent_procs):
             b = self.block_devices[i % len(self.block_devices)]
             fiopath = b
-            out_file = '%s/output.%d' % (self.run_dir, i)
+            # out_file
+            # [iteration]-[device]-[mode]-[client_ra]-[op_size]-[concurrent_procs]-[iodepth]
+            out_file = '%s/%08d-%s-%08d-%08d-%03d-%03d-%s.json' % \
+                       (self.run_dir, self.iteration, os.path.basename(b), int(self.client_ra), int(self.op_size),
+                        int(self.total_procs), int(self.iodepth), self.mode)
+
             fio_cmd = 'sudo %s' % self.fio_cmd
             fio_cmd += ' --rw=%s' % self.mode
             if (self.mode == 'readwrite' or self.mode == 'randrw'):
@@ -107,9 +119,6 @@ class RawFio(Benchmark):
             fio_cmd += ' --bs=%dB' % self.op_size
             fio_cmd += ' --iodepth=%d' % self.iodepth
             fio_cmd += ' --size=%dM' % self.vol_size 
-            fio_cmd += ' --write_iops_log=%s' % out_file
-            fio_cmd += ' --write_bw_log=%s' % out_file
-            fio_cmd += ' --write_lat_log=%s' % out_file
             fio_cmd += ' --output-format=%s' % self.fio_out_format
             if 'recovery_test' in self.cluster.config:
                 fio_cmd += ' --time_based'
@@ -122,19 +131,22 @@ class RawFio(Benchmark):
         logger.info('Finished raw fio test')
 
         common.sync_files('%s/*' % self.run_dir, self.out_dir)
+        common.create_params_file(self.config, self.out_dir)
 
     def cleanup(self):
-         super(RawFio, self).cleanup()
-         clnts = settings.getnodes('clients')
+        super(RawFio, self).cleanup()
+        clnts = settings.getnodes('clients')
 
-         logger.debug("Kill fio: %s" % clnts)
-         common.pdsh(clnts, 'killall fio').communicate()
-         time.sleep(3)
-         common.pdsh(clnts, 'killall -9 fio').communicate()
+        logger.debug("Kill fio: %s" % clnts)
+        common.pdsh(clnts, 'killall fio').communicate()
+        time.sleep(3)
+        common.pdsh(clnts, 'killall -9 fio').communicate()
+
+        common.clean_remote_dir(self.run_dir)
 
     def set_client_param(self, param, value):
-         cmd = 'find /sys/block/vd* ! -iname vda -exec sudo sh -c "echo %s > {}/queue/%s" \;' % (value, param)
-         common.pdsh(settings.getnodes('clients'), cmd).communicate()
+        cmd = 'find /sys/block/vd* ! -iname vda -exec sudo sh -c "echo %s > {}/queue/%s" \;' % (value, param)
+        common.pdsh(settings.getnodes('clients'), cmd).communicate()
 
     def __str__(self):
         return "%s\n%s\n%s" % (self.run_dir, self.out_dir, super(RawFio, self).__str__())

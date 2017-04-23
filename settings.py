@@ -32,7 +32,7 @@ def initialize(ctx):
 
     # set the tmp_dir if not set.
     if 'tmp_dir' not in cluster:
-        cluster['tmp_dir'] = '/tmp/cbt.%s' % os.getpid()
+        cluster['tmp_dir'] = '/tmp/cbt'
 
     # set the ceph.conf file from the commandline, yaml, or default
     if ctx.conf:

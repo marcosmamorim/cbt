@@ -2,7 +2,7 @@ import errno
 import logging
 import os
 import subprocess
-
+import yaml
 import settings
 
 logger = logging.getLogger("cbt")
@@ -170,3 +170,13 @@ def get_osd_ra():
                     return osd_ra
                 except ValueError:
                     continue
+
+def create_params_file(config, archive_dir):
+    params_file = "%s/raw-params.yml" % archive_dir
+    directory = os.path.dirname(params_file)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    logger.debug("Create params file: %s" % params_file)
+    with open(params_file, 'w') as yaml_file:
+        yaml.dump(config, yaml_file, default_flow_style=False)
+

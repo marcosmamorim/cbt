@@ -1,6 +1,6 @@
 import subprocess
 import logging
-
+import uuid
 import settings
 import common
 import monitoring
@@ -11,9 +11,10 @@ class Benchmark(object):
     def __init__(self, cluster, config):
         self.config = config
         self.cluster = cluster
+        self.uuid = uuid.uuid1()
 #        self.cluster = Ceph(settings.cluster)
-        self.archive_dir = "%s/%08d/%s" % (settings.cluster.get('archive_dir'), config.get('iteration'), self.getclass())
-        self.run_dir = "%s/%08d/%s" % (settings.cluster.get('tmp_dir'), config.get('iteration'), self.getclass())
+        self.archive_dir = "%s/%s" % (settings.cluster.get('archive_dir'), self.getclass())
+        self.run_dir = "%s/%s/%s" % (settings.cluster.get('tmp_dir'), self.getclass(), self.uuid)
         self.osd_ra = config.get('osd_ra', None)
         self.cmd_path = ''
         self.valgrind = config.get('valgrind', None)
