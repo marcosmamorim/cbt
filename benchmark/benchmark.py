@@ -28,6 +28,12 @@ class Benchmark(object):
         else:
             self.osd_ra = common.get_osd_ra()
 
+        self.use_sudo = cluster.get('use_sudo', True)
+        if self.use_sudo:
+            self.sudo = 'sudo'
+        else:
+            self.sudo = ''
+
     def cleandir(self):
         # Wipe and create the run directory
         common.clean_remote_dir(self.run_dir)
@@ -66,7 +72,7 @@ class Benchmark(object):
         nodes = settings.getnodes('clients', 'osds') 
 
         common.pdsh(nodes, 'sync').communicate()
-        common.pdsh(nodes, 'echo 3 | sudo tee /proc/sys/vm/drop_caches').communicate()
+        common.pdsh(nodes, 'echo 3 | %s tee /proc/sys/vm/drop_caches' % self.sudo).communicate()
 
     def __str__(self):
         return str(self.config)
