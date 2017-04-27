@@ -17,7 +17,6 @@ cluster:
   iterations: 1
   rebuild_every_test: False
   tmp_dir: "/tmp/cbt"
-  use_sudo:
   pool_profiles:
     replicated:
       pg_size: 64
@@ -40,3 +39,4 @@ benchmarks:
     vol_size: 64
     filesystem: xfs
     output_format: terse
+
