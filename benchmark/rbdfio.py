@@ -149,6 +149,7 @@ class RbdFio(Benchmark):
 
     def cleanup(self):
         super(RbdFio, self).cleanup()
+        common.pdsh(settings.getnodes('clients'), '%s killall -9 fio' % self.sudo).communicate()
         common.pdsh(settings.getnodes('clients'),
                     '%s unmount %s/cbt-kernelrbdfio-`hostname -s`' %
                     (self.sudo, self.cluster.mnt_dir)).communicate()
