@@ -16,7 +16,7 @@ class RbdFio(Benchmark):
         super(RbdFio, self).__init__(cluster, config)
         self.config = config
         self.iteration = config.get('iteration')
-        self.use_pool_existent = config.get('use_pool_existent', True)
+        self.use_existing_volumes = config.get('use_pool_existent', True)
         self.block_device_list = config.get('block_devices', '/dev/vdb' )
         self.block_devices = [d.strip() for d in self.block_device_list.split(',')]
         self.concurrent_procs = config.get('concurrent_procs', len(self.block_devices))
@@ -163,7 +163,7 @@ class RbdFio(Benchmark):
 
     def mkimages(self):
         monitoring.start("%s/pool_monitoring" % self.run_dir)
-        if not self.use_pool_existent:
+        if not self.use_existing_volumes:
             self.cluster.rmpool(self.poolname, self.pool_profile)
             self.cluster.mkpool(self.poolname, self.pool_profile)
         common.pdsh(settings.getnodes('clients'), '%s /usr/bin/rbd create cbt-kernelrbdfio-`hostname -s` --size %s --pool %s' %
