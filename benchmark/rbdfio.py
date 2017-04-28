@@ -16,6 +16,7 @@ class RbdFio(Benchmark):
         super(RbdFio, self).__init__(cluster, config)
         self.config = config
         self.iteration = config.get('iteration')
+        self.use_pool_existent = config.get('use_pool_existent', True)
         self.block_device_list = config.get('block_devices', '/dev/vdb' )
         self.block_devices = [d.strip() for d in self.block_device_list.split(',')]
         self.concurrent_procs = config.get('concurrent_procs', len(self.block_devices))
@@ -32,7 +33,7 @@ class RbdFio(Benchmark):
         self.mode = config.get('mode', 'write')
         self.rwmixread = config.get('rwmixread', 50)
         self.rwmixwrite = 100 - self.rwmixread
-        self.ioengine = config.get('ioengine', 'rbd')
+        self.ioengine = config.get('ioengine', 'libaio')
         self.op_size = config.get('op_size', 4194304)
         self.vol_size = config.get('vol_size', 65536) * 0.9
         self.fio_cmd = config.get('fio_cmd', 'sudo /usr/bin/fio')
@@ -148,7 +149,11 @@ class RbdFio(Benchmark):
 
     def cleanup(self):
         super(RbdFio, self).cleanup()
-        # TODO: Unmap rbd devices from the clients
+        common.pdsh(settings.getnodes('clients'),
+                    '%s unmount %s/cbt-kernelrbdfio-`hostname -s`' %
+                    (self.sudo, self.cluster.mnt_dir)).communicate()
+        common.pdsh(settings.getnodes('clients'), '%s rbd unmap /dev/rbd/%s/cbt-kernelrbdfio-`hostname -s`' %
+                    (self.sudo, self.poolname)).communicate()
 
     def set_client_param(self, param, value):
         common.pdsh(settings.getnodes('clients'), 'find /sys/block/rbd* -exec %s sh -c "echo %s > {}/queue/%s" \;' % (self.sudo, value, param)).communicate()
@@ -158,18 +163,19 @@ class RbdFio(Benchmark):
 
     def mkimages(self):
         monitoring.start("%s/pool_monitoring" % self.run_dir)
-        self.cluster.rmpool(self.poolname, self.pool_profile)
-        self.cluster.mkpool(self.poolname, self.pool_profile)
+        if not self.use_pool_existent:
+            self.cluster.rmpool(self.poolname, self.pool_profile)
+            self.cluster.mkpool(self.poolname, self.pool_profile)
         common.pdsh(settings.getnodes('clients'), '%s /usr/bin/rbd create cbt-kernelrbdfio-`hostname -s` --size %s --pool %s' %
                     (self.sudo, self.vol_size, self.poolname)).communicate()
         common.pdsh(settings.getnodes('clients'), '%s rbd map cbt-kernelrbdfio-`hostname -s` --pool %s --id %s' %
                     (self.sudo, self.poolname, self.clientname)).communicate()
-        common.pdsh(settings.getnodes('clients'), '%s mkfs.%s /dev/rbd/cbt-kernelrbdfio/cbt-kernelrbdfio-`hostname -s`' %
-                    (self.sudo, self.filesystem)).communicate()
+        common.pdsh(settings.getnodes('clients'), '%s mkfs.%s /dev/rbd/%s/cbt-kernelrbdfio-`hostname -s`' %
+                    (self.sudo, self.filesystem, self.poolname)).communicate()
         common.pdsh(settings.getnodes('clients'), '%s mkdir -p -m0755 -- %s/cbt-kernelrbdfio-`hostname -s`' %
                     (self.sudo, self.cluster.mnt_dir)).communicate()
-        common.pdsh(settings.getnodes('clients'), '%s mount -t %s -o noatime,inode64 /dev/rbd/cbt-kernelrbdfio/cbt-kernelrbdfio-`hostname -s` %s/cbt-kernelrbdfio-`hostname -s`' %
-                    (self.sudo, self.filesystem, self.cluster.mnt_dir)).communicate()
+        common.pdsh(settings.getnodes('clients'), '%s mount -t %s -o noatime,inode64 /dev/rbd/%s/cbt-kernelrbdfio-`hostname -s` %s/cbt-kernelrbdfio-`hostname -s`' %
+                    (self.sudo, self.filesystem, self.poolname, self.cluster.mnt_dir)).communicate()
         monitoring.stop()
 
     def recovery_callback(self): 
