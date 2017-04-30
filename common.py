@@ -172,7 +172,15 @@ def get_osd_ra():
                     continue
 
 def create_params_file(config, archive_dir):
-    params_file = "%s/raw-params.yml" % archive_dir
+    params_file = "%s/params-" % archive_dir
+    for k, v in sorted(config.iteritems()):
+        if k == 'block_devices':
+            params_file += "%s_" % os.path.basename(v)
+            continue
+        params_file += "%s_" % (v)
+
+    params_file += ".yml"
+    # params_file = "%s/raw-params.yml" % archive_dir
     directory = os.path.dirname(params_file)
     if not os.path.exists(directory):
         os.makedirs(directory)
