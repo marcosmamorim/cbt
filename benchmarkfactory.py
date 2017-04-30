@@ -2,6 +2,7 @@ import copy
 import itertools
 
 import settings
+import uuid
 from benchmark.radosbench import Radosbench
 from benchmark.rbdfio import RbdFio
 from benchmark.rawfio import RawFio
@@ -12,10 +13,12 @@ from benchmark.cosbench import Cosbench
 from benchmark.cephtestrados import CephTestRados
 from benchmark.getput import Getput
 
+
 def get_all(cluster, iteration):
     for benchmark, config in sorted(settings.benchmarks.iteritems()):
         default = {"benchmark": benchmark,
-                   "iteration": iteration}
+                   "iteration": iteration,
+                   "uuid": str(uuid.uuid1())}
         for current in all_configs(config):
             current.update(default)
             yield get_object(cluster, benchmark, current)
