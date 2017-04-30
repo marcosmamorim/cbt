@@ -36,7 +36,7 @@ class RbdFio(Benchmark):
         self.ioengine = config.get('ioengine', 'libaio')
         self.op_size = config.get('op_size', 4194304)
         self.vol_size = config.get('vol_size', 65536) * 0.9
-        self.fio_cmd = config.get('fio_cmd', 'sudo /usr/bin/fio')
+        self.fio_cmd = config.get('fio_cmd', '/usr/bin/fio')
         self.pool_profile = config.get('pool_profile', 'default')
         self.poolname = config.get('pool_name',  'rbd')
         self.clientname = config.get('client_name',  'admin')
@@ -104,9 +104,15 @@ class RbdFio(Benchmark):
             self.cluster.create_recovery_test(self.run_dir, recovery_callback)
 
         time.sleep(5)
-        out_file = '%s/output' % self.run_dir
+        out_file = "%s/output-" % (self.run_dir)
+        for k, v in sorted(self.config.iteritems()):
+            if k == 'block_devices':
+                out_file += "%s_" % os.path.basename(v)
+                continue
+            out_file += "%s_" % (v)
+        logger.info("OUTFILE: %s" % out_file)
 
-        fio_cmd = '%s %s' % (self.sudo, self.cmd_path_full)
+        fio_cmd = '%s %s' % (self.sudo, self.fio_cmd)
         fio_cmd += ' --rw=%s' % self.mode
         if (self.mode == 'readwrite' or self.mode == 'randrw'):
             fio_cmd += ' --rwmixread=%s --rwmixwrite=%s' % (self.rwmixread, self.rwmixwrite)

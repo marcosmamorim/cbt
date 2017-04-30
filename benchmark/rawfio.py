@@ -39,9 +39,9 @@ class RawFio(Benchmark):
         self.run_dir = "%s/%s/%s" % (settings.cluster.get('tmp_dir'), self.getclass(), self.uuid)
 
     def exists(self):
-        if os.path.exists(self.out_dir):
-            logger.info('Skipping existing test in %s.', self.out_dir)
-            return True
+        # if os.path.exists(self.out_dir):
+        #     logger.info('Skipping existing test in %s.', self.out_dir)
+        #     return True
         return False
 
 
@@ -54,12 +54,13 @@ class RawFio(Benchmark):
             self.sudo = ''
 
         common.pdsh(settings.getnodes('clients'),
-                    '%s %s rm -rf %s' % (self.sudo, self.run_dir),
+                    '%s rm -rf %s' % (self.sudo, self.run_dir),
                     continue_if_error=False).communicate()
         common.make_remote_dir(self.run_dir)
 
     def run(self):
         super(RawFio, self).run()
+        import sys
 
         common.make_remote_dir(self.run_dir)
 
@@ -81,7 +82,14 @@ class RawFio(Benchmark):
         for i in range(self.concurrent_procs):
             b = self.block_devices[i % len(self.block_devices)]
             fiopath = b
-            out_file = "%s/%s-%s" % (self.run_dir, os.path.basename(b), self.mode)
+            out_file = "%s/output-" % (self.run_dir)
+            for k, v in sorted(self.config.iteritems()):
+                if k == 'block_devices':
+                    out_file += "%s_" % os.path.basename(v)
+                    continue
+                out_file += "%s_" % (v)
+            logger.info("OUTFILE: %s" % out_file)
+            # sys.exit(0)
             fio_cmd = '%s %s' % (self.sudo, self.fio_cmd)
             fio_cmd += ' --rw=%s' % self.mode
             if (self.mode == 'readwrite' or self.mode == 'randrw'):

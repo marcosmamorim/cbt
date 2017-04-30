@@ -62,8 +62,7 @@ class KvmRbdFio(Benchmark):
             bnm = os.path.basename(b)
             mtpt = '/srv/rbdfio-`%s`-%s' % (common.get_fqdn_cmd(), bnm)
             logger.debug("format and create mountpoints for %s" % b)
-            # TODO: Create parameter to select filesystem and filesystem options
-            common.pdsh(clnts, '%s mkfs.%s %s' % (self.sudo, self.filesystem, b),
+            common.pdsh(clnts, '%s /usr/sbin/mkfs.%s %s' % (self.sudo, self.filesystem, b),
                         continue_if_error=False).communicate()
             common.pdsh(clnts, '%s mkdir -p %s' % (self.sudo, mtpt),
                         continue_if_error=False).communicate()
@@ -92,7 +91,13 @@ class KvmRbdFio(Benchmark):
         fio_process_list = []
         for i in range(self.concurrent_procs):
             b = self.block_devices[i % len(self.block_devices)]
-            out_file = "%s/%s-%s" % (self.run_dir, os.path.basename(b), self.mode)
+            out_file = "%s/output-" % (self.run_dir)
+            for k, v in sorted(self.config.iteritems()):
+                if k == 'block_devices':
+                    out_file += "%s_" % os.path.basename(v)
+                    continue
+                out_file += "%s_" % (v)
+            logger.info("OUTFILE: %s" % out_file)
             bnm = os.path.basename(b)
             mtpt = '/srv/rbdfio-`hostname -s`-%s' % bnm
             fiopath = os.path.join(mtpt, 'fio%d.img' % i)

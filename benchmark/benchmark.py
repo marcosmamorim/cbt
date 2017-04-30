@@ -11,7 +11,7 @@ class Benchmark(object):
     def __init__(self, cluster, config):
         self.config = config
         self.cluster = cluster
-        self.uuid = uuid.uuid1()
+        self.uuid = config.get('uuid', uuid.uuid1())
 #        self.cluster = Ceph(settings.cluster)
         self.archive_dir = "%s/%s" % (settings.cluster.get('archive_dir'), self.getclass())
         self.run_dir = "%s/%s/%s" % (settings.cluster.get('tmp_dir'), self.getclass(), self.uuid)
@@ -28,7 +28,7 @@ class Benchmark(object):
         else:
             self.osd_ra = common.get_osd_ra()
 
-        self.use_sudo = cluster.get('use_sudo', True)
+        self.use_sudo = settings.cluster.get('use_sudo', True)
         if self.use_sudo:
             self.sudo = 'sudo'
         else:

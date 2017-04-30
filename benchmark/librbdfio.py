@@ -45,7 +45,7 @@ class LibrbdFio(Benchmark):
         self.data_pool = None 
         self.use_existing_volumes = config.get('use_existing_volumes', False)
 
-	self.total_procs = self.procs_per_volume * self.volumes_per_client * len(settings.getnodes('clients').split(','))
+        self.total_procs = self.procs_per_volume * self.volumes_per_client * len(settings.getnodes('clients').split(','))
         self.run_dir = '%s/osd_ra-%08d/op_size-%08d/concurrent_procs-%03d/iodepth-%03d/%s' % (self.run_dir, int(self.osd_ra), int(self.op_size), int(self.total_procs), int(self.iodepth), self.mode)
         self.out_dir = '%s/osd_ra-%08d/op_size-%08d/concurrent_procs-%03d/iodepth-%03d/%s' % (self.archive_dir, int(self.osd_ra), int(self.op_size), int(self.total_procs), int(self.iodepth), self.mode)
 
@@ -134,7 +134,12 @@ class LibrbdFio(Benchmark):
 
     def mkfiocmd(self, volnum):
         rbdname = 'cbt-librbdfio-`%s`-%d' % (common.get_fqdn_cmd(), volnum)
-        out_file = '%s/output.%d' % (self.run_dir, volnum)
+
+        out_file = "%s/output-" % (self.run_dir)
+        for k, v in self.config.iteritems():
+            if k == 'block_devices':
+                continue
+            out_file += "%s_" % (v)
 
         fio_cmd = 'sudo %s --ioengine=rbd --clientname=admin --pool=%s --rbdname=%s --invalidate=0' % (self.cmd_path_full, self.pool_name, rbdname)
         fio_cmd += ' --rw=%s' % self.mode
