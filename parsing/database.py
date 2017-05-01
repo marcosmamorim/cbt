@@ -80,9 +80,37 @@ def insert_results(values, params):
 def get_benchmarks(buuid = None):
     c = conn.cursor()
     if buuid is None:
-        query = 'SELECT * FROM benchmark ORDER BY date'
+        query = 'SELECT DISTINCT uuid, benchmark, iodepth, mode, op_size, vol_size, block_devices, date FROM benchmark ORDER BY date'
         c.execute(query)
         return c.fetchall()
+    else:
+        query = 'SELECT * FROM benchmark WHERE uuid = "%s" ORDER BY date' % buuid
+        c.execute(query)
+        return c.fetchall()
+
+
+def get_benchmark_results(buuid, metric=None, key=None):
+    c = conn.cursor()
+    if metric is None and key is None:
+        query = 'SELECT uuid, iodepth, mode, op_size, vol_size, block_devices, type, key, value, server '
+        query += 'FROM results where uuid = "%s" ORDER BY type,key,value' % buuid
+    elif metric:
+        query = 'SELECT uuid, iodepth, mode, op_size, vol_size, block_devices, type, key, value, server'
+        query += ' FROM results where uuid = "%s" and type = "%s" ORDER BY type,value' % (buuid, metric)
+    elif key:
+        query = 'SELECT uuid, iodepth, mode, op_size, vol_size, block_devices, type, key, value, server'
+        query += ' FROM results where uuid = "%s" and key = "%s" ORDER BY type,value' % (buuid, key)
+
+    c.execute(query)
+    return c.fetchall()
+
+
+def get_keys():
+    c = conn.cursor()
+    query = 'SELECT DISTINCT key FROM results'
+    c.execute(query)
+    return c.fetchall()
+
 
 def get_values(column):
     c = conn.cursor()

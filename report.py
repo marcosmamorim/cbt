@@ -8,17 +8,24 @@ from parsing.htmlgenerator import HTMLGenerator
 import yaml
 import re
 import logging
-
+import sys
+from texttable import Texttable
 from log_support import setup_loggers
 
 logger = logging.getLogger("cbt")
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Import FIO results and Reports.')
-    parser.add_argument('input_directory', help='Directory to search.')
+    parser.add_argument('-i', help='Import benchmarks from directory.', dest='input_directory')
+    parser.add_argument('-l', help='List benchmarks.', dest='list_benchmark', default=False, action='store_true')
+    parser.add_argument('-r', help='List benchmark results', dest='benchmark_uuid', default=None)
+    parser.add_argument('-m', help='List benchmark result by metric type [write][read]', dest='benchmark_metric', default=None)
+    parser.add_argument('-k', help='List benchmark result by result key [iops][runt][bw][io]', dest='benchmark_key', default=None)
+    parser.add_argument('-lk', help='List results key', dest='list_keys', default=False, action='store_true')
     # parser.add_argument('-i', default=[], help='Import from directory.')
     args = parser.parse_args()
     return args
+
 
 def find(pattern, path):
     result = []
@@ -29,12 +36,6 @@ def find(pattern, path):
     return result
 
 
-def splits(s,d1,d2):
-    l, _,r = s.partition(d1)
-    m,_,r = r.partition(d2)
-    return m
-
-
 def getbw(s):
     if "GB/s" in s:
         return float(s[:-4])*1024
@@ -43,8 +44,13 @@ def getbw(s):
     if "KB/s" in s:
         return float(s[:-4])/1024
 
+def replace_metric(metric):
+    regex = r"(KB.*|msec)"
+    return re.sub(regex, '', metric)
+
+
 # Read metrics from output files
-def getmetrics(filename, params):
+def import_metrics(filename, params):
     header_results = ['uuid', 'iodepth', 'mode', 'op_size', 'vol_size', 'block_devices']
 
     file_parse = filename.split("_")
@@ -71,14 +77,16 @@ def getmetrics(filename, params):
                 db_result = []
                 for field in header_results:
                     db_result.append(params[field])
+                k = k.split(' ')[0]
                 db_result.append(k)
                 db_result.append(k1)
-                db_result.append(v1.strip())
+                # print "METRIC: %s " % replace_metric(v1)
+                db_result.append(replace_metric(v1).strip())
                 db_result.append(str(uuid.uuid1()))
-                db_result.append(server_name)
+                db_result.append(server_name[1:])
                 database.insert_results(db_result, params)
 
-def get_outputs(base_dir, params):
+def import_results(base_dir, params):
     # logger.info("Begin read output files")
     out_file = "%s/output-" % (base_dir)
     for k, v in sorted(params.iteritems()):
@@ -90,10 +98,10 @@ def get_outputs(base_dir, params):
     out_file += "*"
     files = find('output-*', base_dir)
     for output in files:
-        getmetrics(output, params)
+        import_metrics(output, params)
 
 
-def getbenchmarks():
+def import_benchmarks():
     logger.info("Begin read benchmarks")
     files = find('params-*.yml', ctx.input_directory)
 
@@ -119,81 +127,66 @@ def getbenchmarks():
         if database.exists(benchmark_db, 'benchmark'):
             logger.info("Insert benchmarks from parameters file: %s" % inputname)
             database.insert_benchmark(benchmark_db)
-            get_outputs(base_dir, params)
+            import_results(base_dir, params)
         else:
             logger.warning("Benchmark already imported to database %s" % inputname)
 
 
-
-        #
-        # # strip off the input directory
-        # params = inputname[len(ctx.input_directory):].split("/")
-        #
-        # # Workaround to get benchmark uuid
-        # if not benchmark.has_key('uuid'):
-        #     pos = (len(params)-2)
-        #     print "UUID: %s" % params
-        #     uuid = {'uuid': params[pos]}
-        #     benchmark.update(uuid)
-        #
-        # base_dir = os.path.dirname(inputname)
-        #
-        # # Start to search output and process metrics
-        # findbenchmarks(base_dir, benchmark)
+def list_benchmarks():
+    results = database.get_benchmarks(None)
+    # print results
+    header = ['uuid', 'benchmark', 'iodepth', 'mode', 'op_size', 'vol_size', 'block_devices', 'date']
+    t = Texttable()
+    t.set_cols_width([36, 10, 7, 9, 8, 8, 14, 26])
+    t.set_cols_align(['l', 'l', 'r', 'l', 'r', 'r', 'l', 'c'])
+    t.header(header)
+    for r in results:
+        t.add_row(r)
+    print t.draw()
 
 
+def list_benchmark_results(buuid, metric=None, key=None):
+    results = database.get_benchmark_results(buuid, metric, key)
+    # print results;
+    t = Texttable()
+    header = ['benchmark uuid', 'iodepth', 'mode', 'op_size', 'vol_size', 'block_devices', 'type', 'key', 'value', 'server']
+    t.set_cols_width([36, 7, 7, 7, 8, 13, 8, 5, 9, 16])
+    t.set_cols_align(['l', 'r', 'l', 'r', 'r', 'l', 'l', 'l', 'r', 'l'])
+    t.header(header)
+    for r in results:
+        t.add_row(r)
+    print t.draw()
 
-        # # make readahead into an int
-        # params[3] = int(params[3][7:])
-        #
-        # # Make op_size into an int
-        # params[4] = int(params[4][8:])
-        #
-        # # Make cprocs into an int
-        # params[5] = int(params[5][17:])
-        #
-        # # Make io_depth int an int
-        # params[6] = int(params[6][9:])
-        #
-        # params_hash = mkhash(params)
-        # params = [params_hash] + params
-        # params.extend([0,0])
-        # database.insert(params)
-        #
-        # for line in open(inputname):
-        #     if "aggrb" in line:
-        #          bw = getbw(splits(line, 'aggrb=', ','))
-        #          if "READ" in line:
-        #              database.update_readbw(params_hash, bw)
-        #          elif "WRITE" in line:
-        #              database.update_writebw(params_hash, bw)
-        # html = HTMLGenerator()
-        # html.add_html(html.read_file('/home/nhm/src/cbt/include/html/table.html'))
-        # html.add_style(html.read_file('/home/nhm/src/cbt/include/css/table.css'))
-        # html.add_script(html.read_file('/home/nhm/src/cbt/include/js/jsxcompressor.min.js'))
-        # html.add_script(html.read_file('/home/nhm/src/cbt/include/js/d3.js'))
-        # html.add_script(html.read_file('/home/nhm/src/cbt/include/js/d3var.js'))
-        # html.add_script(html.format_data(database.fetch_table(['opsize', 'testtype'])))
-        # html.add_script(html.read_file('/home/nhm/src/cbt/include/js/table.js'))
-        #
-        # print '<meta charset="utf-8">'
-        # print '<title>D3 Table Test </title>'
-        # print '<html>'
-        # print html.to_string()
-        # print '</html>'
-        #    print database.fetch_table(['opsize', 'testtype'])
-
-        #    get_section(['opsize', 'testtype'])
-
-        #    write_html()
-        #    write_data(['opsize', 'testtype'])
-        #    write_style()
-        #    write_js()
-
+def list_keys():
+    t = Texttable()
+    t.set_deco(Texttable.HEADER)
+    t.header(['Keys'])
+    results = database.get_keys()
+    print results
+    for r in results:
+        t.add_row(r)
+    print t.draw()
 
 if __name__ == '__main__':
     setup_loggers()
     ctx = parse_args()
     database.create_db()
-    getbenchmarks()
+
+    if ctx.input_directory is not None:
+        logger.info("Starting import from directory to database")
+        import_benchmarks()
+
+    if ctx.list_benchmark:
+        list_benchmarks()
+
+    if ctx.benchmark_uuid and ctx.benchmark_key is None:
+        list_benchmark_results(ctx.benchmark_uuid, ctx.benchmark_metric)
+
+    if ctx.benchmark_uuid and ctx.benchmark_key:
+        list_benchmark_results(ctx.benchmark_uuid, None, ctx.benchmark_key)
+
+    if ctx.list_keys:
+        list_keys()
+
+    sys.exit(0)
 
