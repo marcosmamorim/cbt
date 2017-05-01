@@ -2,32 +2,23 @@
 
 import argparse
 import os, fnmatch
-import numpy
-import hashlib
-import database
+from parsing import database
 import uuid
-from htmlgenerator import HTMLGenerator
+from parsing.htmlgenerator import HTMLGenerator
 import yaml
 import re
 import logging
-import sys
-sys.path.append('/home/mamorim/Projects/cbt')
 
 from log_support import setup_loggers
 
 logger = logging.getLogger("cbt")
 
-def mkhash(values):
-    value_string = ''.join([str(i) for i in values])
-    return hashlib.sha256(value_string).hexdigest()
-
-
 def parse_args():
-    parser = argparse.ArgumentParser(description='get fio averages.')
+    parser = argparse.ArgumentParser(description='Import FIO results and Reports.')
     parser.add_argument('input_directory', help='Directory to search.')
+    # parser.add_argument('-i', default=[], help='Import from directory.')
     args = parser.parse_args()
     return args
-
 
 def find(pattern, path):
     result = []
@@ -64,9 +55,7 @@ def getmetrics(filename, params):
     values = {}
     for i, line in enumerate(open(filename)):
         for match in re.finditer(regex, line):
-            # print "\t\tGROUP: %s" % match.group()
             results = match.group().split(':')
-            # print "\t\tRESULTS: %s" % results
             metrics[results[0].strip()] = results[1].strip()
 
     for k,v in metrics.iteritems():
@@ -74,22 +63,19 @@ def getmetrics(filename, params):
         v2 = dict(x.strip().split('=') for x in v.split(','))
         values[k].update(v2)
 
-    # logger.debug("Insert Values: %s" % values)
-    print values
+    # print values
+
     for k, v in values.iteritems():
-        # logger.debug("Metric Type: %s" % k)
         if isinstance(v, dict):
             for k1, v1 in v.iteritems():
                 db_result = []
                 for field in header_results:
                     db_result.append(params[field])
-                # logger.debug("Metric Type: %s - Key: %s - Value: %s" % (k, k1, v1))
                 db_result.append(k)
                 db_result.append(k1)
                 db_result.append(v1.strip())
                 db_result.append(str(uuid.uuid1()))
                 db_result.append(server_name)
-                print "Insert results: %s" % db_result
                 database.insert_results(db_result, params)
 
 def get_outputs(base_dir, params):
@@ -104,25 +90,7 @@ def get_outputs(base_dir, params):
     out_file += "*"
     files = find('output-*', base_dir)
     for output in files:
-        # logger.info("Read outputs from %s" % output)
-        # print "\t" + output
         getmetrics(output, params)
-        # print "\t\tResultados: %s" % results
-    # print "Find benchmarks on %s" % base_dir
-    # bmode = params['mode']
-    # uuid = params['uuid']
-    # device = os.path.basename(params['block_devices'])
-    # results_out = {uuid: {bmode: {device: {}}}}
-    # print "Benchmark Type: %s - Disk: %s" % (params['mode'], params['block_devices'])
-    # # print "Device name: %s" % device
-    # outputs = find("%s-%s*" % (device, bmode), base_dir)
-    # for inputname in outputs:
-    #     print "Arquivo: %s " % inputname
-    #     parse = inputname.split('/')
-    #     print "Parse: %s" % parse
-    #     results = getmetrics(inputname)
-    #     results_out[uuid][bmode][device].update(results)
-    # print results_out
 
 
 def getbenchmarks():
@@ -130,7 +98,6 @@ def getbenchmarks():
     files = find('params-*.yml', ctx.input_directory)
 
     for inputname in files:
-        logger.info("Insert benchmarks from parameters file: %s" % inputname)
 
         # print inputname
         base_dir = os.path.dirname(inputname)
@@ -149,10 +116,12 @@ def getbenchmarks():
             benchmark_db[bench] = params[bench]
 
         # print "Insert into benchmark table: %s" % benchmark_db
-        database.insert_benchmark(benchmark_db)
-
-        get_outputs(base_dir, params)
-
+        if database.exists(benchmark_db, 'benchmark'):
+            logger.info("Insert benchmarks from parameters file: %s" % inputname)
+            database.insert_benchmark(benchmark_db)
+            get_outputs(base_dir, params)
+        else:
+            logger.warning("Benchmark already imported to database %s" % inputname)
 
 
 
