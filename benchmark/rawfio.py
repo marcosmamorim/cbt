@@ -34,11 +34,12 @@ class RawFio(Benchmark):
         self.op_size = config.get('op_size', 4194304)
         self.vol_size = config.get('vol_size', 65536) * 0.9
         self.output_format = config.get('output_format', 'terse')
-        self.fio_cmd = config.get('fio_cmd', 'sudo /usr/bin/fio')
+        self.fio_cmd = config.get('fio_cmd', '/usr/bin/fio')
         self.out_dir = '%s/%s' % (self.archive_dir, self.uuid)
         self.run_dir = "%s/%s/%s" % (settings.cluster.get('tmp_dir'), self.getclass(), self.uuid)
 
     def exists(self):
+        # TODO: Fix when we are running with multiple devices
         # if os.path.exists(self.out_dir):
         #     logger.info('Skipping existing test in %s.', self.out_dir)
         #     return True
@@ -58,9 +59,9 @@ class RawFio(Benchmark):
                     continue_if_error=False).communicate()
         common.make_remote_dir(self.run_dir)
 
+
     def run(self):
         super(RawFio, self).run()
-        import sys
 
         common.make_remote_dir(self.run_dir)
 
