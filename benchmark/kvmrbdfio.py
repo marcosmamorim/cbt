@@ -39,9 +39,10 @@ class KvmRbdFio(Benchmark):
         self.run_dir = "%s/%s/%s" % (settings.cluster.get('tmp_dir'), self.getclass(), self.uuid)
 
     def exists(self):
-        if os.path.exists(self.out_dir):
-            logger.info('Skipping existing test in %s.', self.out_dir)
-            return True
+        # TODO: Fix when we are running with multiple devices
+        # if os.path.exists(self.out_dir):
+        #     logger.info('Skipping existing test in %s.', self.out_dir)
+        #     return True
         return False
 
     def initialize(self): 
@@ -60,7 +61,7 @@ class KvmRbdFio(Benchmark):
         logger.info('creating mountpoints... %s' % self.block_devices)
         for b in self.block_devices:
             bnm = os.path.basename(b)
-            mtpt = '/srv/rbdfio-`%s`-%s' % (common.get_fqdn_cmd(), bnm)
+            mtpt = '/srv/rbdfio-`hostname -s`-%s' % (bnm)
             logger.debug("format and create mountpoints for %s" % b)
             common.pdsh(clnts, '%s /usr/sbin/mkfs.%s %s' % (self.sudo, self.filesystem, b),
                         continue_if_error=False).communicate()
@@ -70,9 +71,6 @@ class KvmRbdFio(Benchmark):
                         continue_if_error=False).communicate()
 
         common.make_remote_dir(self.run_dir)
-
-        # Set client readahead
-        self.set_client_param('read_ahead_kb', self.client_ra)
 
         # We'll always drop caches for rados bench
         self.dropcaches()
@@ -92,6 +90,7 @@ class KvmRbdFio(Benchmark):
         for i in range(self.concurrent_procs):
             b = self.block_devices[i % len(self.block_devices)]
             out_file = "%s/output-" % (self.run_dir)
+
             for k, v in sorted(self.config.iteritems()):
                 if k == 'block_devices':
                     out_file += "%s_" % os.path.basename(v)
@@ -99,6 +98,10 @@ class KvmRbdFio(Benchmark):
                 out_file += "%s_" % (v)
             logger.info("OUTFILE: %s" % out_file)
             bnm = os.path.basename(b)
+
+            # Set client readahead
+            self.set_client_param('read_ahead_kb', self.client_ra, bnm)
+
             mtpt = '/srv/rbdfio-`hostname -s`-%s' % bnm
             fiopath = os.path.join(mtpt, 'fio%d.img' % i)
             fio_cmd = '%s %s' % (self.sudo, self.fio_cmd)
@@ -132,26 +135,27 @@ class KvmRbdFio(Benchmark):
         for p in fio_process_list:
             p.communicate()
         monitoring.stop(self.run_dir)
-        logger.info('Finished rbd fio test')
+        logger.info('Finished kvm fio test')
 
         common.sync_files('%s/*' % self.run_dir, self.out_dir)
         common.create_params_file(self.config, self.out_dir)
         self.cleanup()
 
     def cleanup(self):
-         super(KvmRbdFio, self).cleanup()
-         clnts = settings.getnodes('clients')
-         common.pdsh(clnts, '%s killall fio' % self.sudo).communicate()
-         time.sleep(3)
-         common.pdsh(clnts, '%s killall -9 fio' % self.sudo).communicate()
-         time.sleep(3)
-         common.pdsh(clnts, '%s rm -rf /srv/*/*' % self.sudo,
-                     continue_if_error=True).communicate()
-         common.pdsh(clnts, '%s umount /srv/* || echo -n' % self.sudo).communicate()
+        super(KvmRbdFio, self).cleanup()
+        clnts = settings.getnodes('clients')
+        common.pdsh(clnts, '%s killall fio' % self.sudo).communicate()
+        time.sleep(3)
+        common.pdsh(clnts, '%s killall -9 fio' % self.sudo).communicate()
+        time.sleep(3)
+        common.pdsh(clnts, '%s rm -rf /srv/*/*' % self.sudo,
+                    continue_if_error=True).communicate()
+        common.pdsh(clnts, '%s umount /srv/* || echo -n' % self.sudo).communicate()
+        common.pdsh(clnts, '%s rm -rf %s' % (self.sudo, self.run_dir)).communicate()
 
-    def set_client_param(self, param, value):
-         cmd = 'find /sys/block/vd* ! -iname vda -exec %s sh -c "echo %s > {}/queue/%s" \;' % (self.sudo, value, param)
-         common.pdsh(settings.getnodes('clients'), cmd).communicate()
+    def set_client_param(self, param, value, block):
+        cmd = 'find /sys/block/%s ! -iname vda -exec %s sh -c "echo %s > {}/queue/%s" \;' % (block, self.sudo, value, param)
+        common.pdsh(settings.getnodes('clients'), cmd).communicate()
 
     def __str__(self):
         return "%s\n%s\n%s" % (self.run_dir, self.out_dir, super(KvmRbdFio, self).__str__())
